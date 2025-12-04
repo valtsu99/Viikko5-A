@@ -1,8 +1,6 @@
 # Copyright (c) 2025 Oma Nimi
 # License: MIT
 
-
-
 import csv
 import datetime
 from typing import List, Optional
@@ -14,11 +12,13 @@ EN_TO_FI = {
 }
 
 def lue_data(viikko42: str) -> List[List[str]]:
+    """Lukee CSV-tiedoston (puolipiste erottimella) ja palauttaa rivit listana."""
     with open(viikko42, "r", encoding="utf-8-sig", newline="") as f:
         reader = csv.reader(f, delimiter=';')
         return [[cell.strip() for cell in row] for row in reader]
 
 def _parse_date(value: str) -> Optional[datetime.date]:
+    """Parsii merkkijonon päivämääräksi. Tukee muodot: d.m.yyyy, yyyy-mm-dd, d/m/yyyy, d.m.yy."""
     if value is None:
         return None
     v = value.strip().lstrip("\ufeff")
@@ -36,9 +36,12 @@ def _parse_date(value: str) -> Optional[datetime.date]:
         return None
 
 def _weekday_finnish_from_date(d: datetime.date) -> str:
+    """Palauttaa viikonpäivän suomeksi annetusta datetime.date-objektista."""
     return WEEKDAYS_FI[d.weekday()]
 
 def _weekday_finnish_from_text(value: str) -> str:
+    """Palauttaa viikonpäivän suomeksi merkkijonosta. Ymmärtää päivämäärät, 
+    englanninkieliset päivät, suomenkieliset päivät ja numerot (0-6 tai 1-7)."""
     v = value.strip()
     if not v:
         return ""
@@ -59,10 +62,13 @@ def _weekday_finnish_from_text(value: str) -> str:
     return v
 
 def _format_date_fi(d: Optional[datetime.date]) -> str:
+    """Muotoilee päivämäärän suomalaiseksi muodoksi (pv.kk.vvvv). 
+    Palauttaa tyhjän merkkijonon, jos päivämäärä on None."""
     return d.strftime("%d.%m.%Y") if d else ""
 
 def _to_kwh_guess(s: str) -> Optional[float]:
-    
+    """Parsii numeroa merkkijonosta ja muuntaa Wh -> kWh 
+    (jakaa 1000:lla). Palauttaa tuloksen kWh-yksikössä."""
     if s is None:
         return None
     v = s.strip().replace(" ", "").replace(",", ".")
@@ -73,57 +79,57 @@ def _to_kwh_guess(s: str) -> Optional[float]:
     except Exception:
         return None
     
-    if abs(num) > 100:  
-        num = num / 1000.0
-    return num
+    # Muuntaa Wh -> kWh (jaa 1000:lla)
+    return num / 1000
 
 def _fmt_num_kwh(n: Optional[float]) -> str:
+    """Muotoilee kWh-arvon näytettäväksi muodoksi (6 merkkiä, 2 desimaalia, 
+    desimaalin erottimena pilkku). Palauttaa tyhjän merkkijonon, jos arvo on None."""
     if n is None:
         return ""
     s = f"{n:6.2f}"
     return s.replace(".", ",")
 
+def _etsi_sarakeindeksit(header: List[str]) -> dict:
+    """Etsii sarakeindeksit otsikkoriviltä perinteisesti täsmällisellä osumahaulla.
+    Palauttaa sanakirjan sarakeindekseistä (date, ck, cv, ct, pk, pv, pt)."""
+    indices = {}
+    for i, cell in enumerate(header):
+        cell_lower = cell.lower().strip()
+        if cell_lower == "päivä" or cell_lower == "day":
+            indices["date"] = i
+        elif cell_lower == "kulutus vaihe 1" or cell_lower == "kulutus v1":
+            indices["ck"] = i
+        elif cell_lower == "kulutus vaihe 2" or cell_lower == "kulutus v2":
+            indices["cv"] = i
+        elif cell_lower == "kulutus vaihe 3" or cell_lower == "kulutus v3":
+            indices["ct"] = i
+        elif cell_lower == "tuotanto vaihe 1" or cell_lower == "tuotanto v1":
+            indices["pk"] = i
+        elif cell_lower == "tuotanto vaihe 2" or cell_lower == "tuotanto v2":
+            indices["pv"] = i
+        elif cell_lower == "tuotanto vaihe 3" or cell_lower == "tuotanto v3":
+            indices["pt"] = i
+    return indices
+
 def tulosta_taulukko(tiedosto: str):
+    """Lukee CSV-tiedoston ja tulostaa käyttäjäystävällisen taulukon 
+    sähkönkulutuksesta ja -tuotannosta vaiheittain (kWh)."""
     data = lue_data(tiedosto)
     if not data:
         return
 
-    
     first = data[0]
     has_header = any(cell and any(ch.isalpha() for ch in cell) for cell in first)
 
-    
-    def default_indices():
-        return {"date":0, "ck":1, "cv":2, "ct":3, "pk":4, "pv":5, "pt":6}
+    # Oletusindeksit
+    indices = {"date": 0, "ck": 1, "cv": 2, "ct": 3, "pk": 4, "pv": 5, "pt": 6}
 
-    indices = default_indices()
-
+    # Jos otsikko löytyy, etsi sarakkeet perinteisesti
     if has_header:
-        header = [c.lower() for c in first]
-        # etsitään päivämäärä- ja kulutus/tuotanto-sarakkeet heuristiikalla
-        for i, h in enumerate(header):
-            if "pvm" in h or "päiv" in h or "date" in h:
-                indices["date"] = i
-            if "kulutus" in h and ("vaihe 1" in h or "v1" in h or "vaihe1" in h or "1" in h):
-                indices["ck"] = i
-            if "kulutus" in h and ("vaihe 2" in h or "v2" in h or "vaihe2" in h or "2" in h):
-                indices["cv"] = i
-            if "kulutus" in h and ("vaihe 3" in h or "v3" in h or "vaihe3" in h or "3" in h):
-                indices["ct"] = i
-            if "tuotanto" in h and ("vaihe 1" in h or "v1" in h or "vaihe1" in h or "1" in h):
-                indices["pk"] = i
-            if "tuotanto" in h and ("vaihe 2" in h or "v2" in h or "vaihe2" in h or "2" in h):
-                indices["pv"] = i
-            if "tuotanto" in h and ("vaihe 3" in h or "v3" in h or "vaihe3" in h or "3" in h):
-                indices["pt"] = i
-       
-        if len(header) >= 7:
-           
-            d = indices.get("date", 0)
-            if d + 6 < len(header):
-                indices = {"date": d, "ck": d+1, "cv": d+2, "ct": d+3, "pk": d+4, "pv": d+5, "pt": d+6}
+        found_indices = _etsi_sarakeindeksit(first)
+        indices.update(found_indices)
 
-    
     # Tulostusotsikko
     print("Viikon 42 sähkönkulutus ja -tuotanto")
     print()
@@ -141,20 +147,19 @@ def tulosta_taulukko(tiedosto: str):
         weekday = _weekday_finnish_from_text(raw_date) if not d else _weekday_finnish_from_date(d)
         date_str = _format_date_fi(d)
 
-        
         def val(idx):
+            """Palauttaa kWh-arvon annetusta sarakeindeksistä."""
             if idx >= len(row):
                 return None
             return _to_kwh_guess(row[idx])
 
-        ck = val(indices["ck"])
-        cv = val(indices["cv"])
-        ct = val(indices["ct"])
-        pk = val(indices["pk"])
-        pv = val(indices["pv"])
-        pt = val(indices["pt"])
+        ck = val(indices.get("ck", 1))
+        cv = val(indices.get("cv", 2))
+        ct = val(indices.get("ct", 3))
+        pk = val(indices.get("pk", 4))
+        pv = val(indices.get("pv", 5))
+        pt = val(indices.get("pt", 6))
 
-        
         ck_s = _fmt_num_kwh(ck)
         cv_s = _fmt_num_kwh(cv)
         ct_s = _fmt_num_kwh(ct)
